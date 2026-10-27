@@ -4,7 +4,7 @@ import OAI.Algorithms.SubexponentialSAT.Encoding
 /-!
 # From Mathlib formulas to the OpenAI formula syntax
 
-`toOAI` renames the literal `(v, b)` to OpenAI's `⟨v, b⟩`. The readable `encode` is OpenAI's
+`toOAI` renames the literal `(v, b)` to OpenAI's `⟨v, b⟩`. The readable `encodeSet` is OpenAI's
 `encodeCNF` after this renaming, so it is injective and its length obeys OpenAI's bounds.
 -/
 
@@ -12,8 +12,15 @@ namespace ETHIsFalse.Proof
 
 open OAI.Algorithms.SubexponentialSAT
 
-/-- Formulas with `n` variables, as in `ETHIsFalse.encode`. -/
+/-- Formulas with `n` variables as sets of sets of literals, as `ETHIsFalse.clauseSet` gives. -/
 abbrev CNF (n : ℕ) := Finset (Finset (Fin n × Bool))
+
+/-- `ETHIsFalse.encode` on sets of clauses: `encode n F = encodeSet n (clauseSet F)`. -/
+def encodeSet (n : ℕ) (F : CNF n) : List Bool :=
+  unary n ++ listCode (listCode unary) ((F.image clauseNumbers).sort (· ≤ ·))
+
+theorem encode_eq_encodeSet {n : ℕ} (F : Std.Sat.CNF (Fin n)) :
+    encode n F = encodeSet n (clauseSet F) := rfl
 
 /-- The literal `(v, b)` as an OpenAI literal. -/
 def toLit {n : ℕ} (l : Fin n × Bool) : SAT.Literal (Fin n) := ⟨l.1, l.2⟩
@@ -79,17 +86,17 @@ theorem clauseNumbers_eq {n : ℕ} (C : Finset (Fin n × Bool)) :
   cases b <;> simp [Encoding.literalCode, toLit, Bool.toNat]
 
 /-- The readable encoding is OpenAI's `encodeCNF`. -/
-theorem encode_eq {n : ℕ} (F : CNF n) : encode n F = Encoding.encodeCNF (toOAI F) := by
+theorem encode_eq {n : ℕ} (F : CNF n) : encodeSet n F = Encoding.encodeCNF (toOAI F) := by
   have hl : listCode unary = Encoding.encodeList Encoding.encodeNat :=
     funext (listCode_eq unary)
   have hc : (clauseNumbers : Finset (Fin n × Bool) → List ℕ) =
       Encoding.clauseNumbers ∘ fun C => C.image toLit :=
     funext clauseNumbers_eq
-  simp only [encode, Encoding.encodeCNF, Encoding.encodeCNFBody, Encoding.cnfNumbers, toOAI,
+  simp only [encodeSet, Encoding.encodeCNF, Encoding.encodeCNFBody, Encoding.cnfNumbers, toOAI,
     Finset.image_image, listCode_eq, hl, hc]
   rfl
 
-theorem encode_injective : Function.Injective fun F : Σ n, CNF n => encode F.1 F.2 := by
+theorem encode_injective : Function.Injective fun F : Σ n, CNF n => encodeSet F.1 F.2 := by
   rintro ⟨n, F⟩ ⟨m, G⟩ h
   dsimp only at h
   rw [encode_eq, encode_eq] at h
@@ -99,7 +106,7 @@ theorem encode_injective : Function.Injective fun F : Σ n, CNF n => encode F.1 
   rw [toOAI_injective (eq_of_heq hFG)]
 
 theorem length_encode {n : ℕ} (F : CNF n) :
-    (encode n F).length = Encoding.formulaBitLength (toOAI F) := by
+    (encodeSet n F).length = Encoding.formulaBitLength (toOAI F) := by
   rw [encode_eq]; rfl
 
 end ETHIsFalse.Proof

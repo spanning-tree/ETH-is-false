@@ -6,42 +6,46 @@ model, traces and runtime bounds, which are hard to check. Our goal is a stateme
 a few seconds and trust as long as you trust Lean, Mathlib and CSLib: it reuses their definitions
 and adds as little as possible of its own, and it is proved from OpenAI's unmodified proof.
 
-Done with the assistance of Claude Opus 5.5 and checked by hand.
+Done with the assistance of Claude Opus 5.5.
 
 ## The statement
 
-[`ETHIsFalse/Statement.lean`](ETHIsFalse/Statement.lean) imports only Mathlib and CSLib:
+[`ETHIsFalse/Statement.lean`](ETHIsFalse/Statement.lean) imports only Lean, Mathlib and CSLib:
 
 ```lean
 def SubexponentialThreeSAT : Prop :=
   ∃ d : ℕ, ∀ r : ℕ, 0 < r → ∃ c : ℕ,
     ∃ (k : ℕ) (State : Type) (_ : Finite State) (tm : Turing.MultiTapeTM k Bool State),
-      ∀ (n : ℕ) (F : Finset (Finset (Fin n × Bool))), (∀ C ∈ F, C.card ≤ 3) →
-        ∃ t ≤ c * (n + F.card + 1) ^ d * 2 ^ (n / r),
-        ∃ s ≤ c * (n + F.card + 1) ^ d,
+      ∀ (n : ℕ) (F : Std.Sat.CNF (Fin n)), (∀ C ∈ F.clauses, C.length ≤ 3) →
+        ∃ t ≤ c * (n + F.clauses.size + 1) ^ d * 2 ^ (n / r),
+        ∃ s ≤ c * (n + F.clauses.size + 1) ^ d,
           tm.ComputesInTimeAndSpace (encode n F)
-            [decide (∃ a : Fin n → Bool, ∀ C ∈ F, ∃ l ∈ C, a l.1 = l.2)] t s
+            [decide (∃ a : Fin n → Bool, F.Sat a)] t s
 ```
 
 There is a degree `d` such that, for every `r ≥ 1`, a single Turing machine decides satisfiability
 of every 3-CNF formula with `n` variables and `m` clauses in at most `c · (n+m+1)^d · 2^(n/r)` steps.
 ETH says some `δ > 0` rules out every `2^(δn) · poly` algorithm, so this is its negation.
 
-A formula is a set of clauses, each a set of literals; the literal `(v, b)` means "variable `v`
-is `b`". `SubexponentialSharpSAT`, in the same file, is OpenAI's full result: the exact number of
-satisfying assignments of `w`-CNF formulas, for every `w`, within the same bounds.
+Formulas and satisfiability are Lean's own: `Std.Sat.CNF (Fin n)` is an array of clauses, each a
+list of literals `(v, b)` ("variable `v` is `b`"), and `F.Sat a` says the assignment `a` makes at
+least one literal of every clause true. `SubexponentialSharpSAT`, in the same file, is OpenAI's
+full result: the exact number of satisfying assignments of `w`-CNF formulas, for every `w`, within
+the same bounds.
 
 ## What it depends on
 
 | from | definitions |
 |---|---|
+| Lean `v4.34.1` | `Std.Sat.CNF` (formulas), `Std.Sat.CNF.Sat` (an assignment satisfies a formula) |
 | CSLib `990e65a6` | `Turing.MultiTapeTM` (read-only input tape, `k` work tapes, output tape), `ComputesInTimeAndSpace` (halts within `t` steps with the given output, using `s` work cells) |
 | Mathlib `v4.34.1` | `Finset`, `Fin`, `Fintype.card`, `Nat.bits`, … |
-| **ours** | `encode`: the input format, `n` in unary, then the sorted clauses, each as the sorted list of its literal numbers `2v+b` in unary (built from `unary`, `frame`, `listCode`, `clauseNumbers`; proved equal to OpenAI's encoding) |
+| **ours** | `encode`: the input format, `n` in unary, then the set of clauses in sorted order, each as the sorted list of its literal numbers `2v+b` in unary (built from `unary`, `frame`, `listCode`, `clauseNumbers`, `clauseSet`; proved equal to OpenAI's encoding) |
 | **ours** | `binary`: the output format of a count, `Nat.bits` with `0 ↦ [false]` (`SubexponentialSharpSAT` only) |
 
-Neither Mathlib nor CSLib defines CNF formulas or an encoding of them, so an input format has to
-be fixed here. Nothing of OpenAI's appears in the statement.
+Lean defines CNF formulas but no encoding of them as bits for a Turing machine (its
+`Std.Sat.CNF.dimacs` writes a DIMACS string), and neither do Mathlib or CSLib, so an input format
+has to be fixed here. Nothing of OpenAI's appears in the statement.
 
 ## Layout
 
@@ -49,10 +53,11 @@ be fixed here. Nothing of OpenAI's appears in the statement.
 ETHIsFalse/
   Statement.lean        the statements and every definition they use; read this
   Main.lean             theorem eth_is_false, theorem sharpSAT_subexponential
+  Examples.lean         the examples in Statement.lean's comments, checked by Lean
   Proof/
-    Bridge.lean         Mathlib formulas ↔ OpenAI's formulas; `encode` = OpenAI's encoding
+    Bridge.lean         sets of clauses ↔ OpenAI's formulas; `encode` = OpenAI's encoding
     Simulation.lean     a CSLib Turing machine simulating OpenAI's machine step for step
-    CslibForm.lean      the statements via CSLib's `DecidableInTimeAndSpace`, and their unfolding
+    CslibForm.lean      the statements via CSLib's `DecidableInTimeAndSpace`; Lean's CNF ↔ sets
     Reduction.lean      OpenAI's theorem ⇒ the statements
     Final.lean          applies the reduction to OpenAI's `exact_count_and_sat`
 OpenAI/                 OpenAI's proof, the 3091 files it needs, copied unmodified (Apache-2.0)
